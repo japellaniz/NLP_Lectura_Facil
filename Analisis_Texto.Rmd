@@ -1,0 +1,49 @@
+---
+title: "Analisis Ley Arrendamientos Urbanos"
+output: html_notebook
+---
+
+
+
+Inicializaciones y carga de librerías.
+```{r}
+rm(list = ls());cat("\014")
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+getwd()
+dir()
+options(stringsAsFactors = FALSE)
+library(readtext)
+library(quanteda)
+```
+
+
+Extracción del texto del pdf y escritura como csv.
+```{r}
+data_file <- list.files(path="data", full.names = T, recursive = T)
+head(data_file)
+textdata <- readtext(data_file[1],docvarsfrom = "filepaths", dvsep="/")
+head(textdata)
+cat(substr((textdata$text[1]),0,300))
+write.csv2(textdata,file="data/textdata.csv", fileEncoding = "UTF-8")
+```
+
+
+Obtención del corpus.
+```{r}
+# textdata <- read.csv("data/textdata.csv", header = T, sep = ";", encoding = "UTF-8")
+
+dim(textdata)
+colnames(textdata)
+textdata <- textdata[,1:2]
+
+text_corpus <- corpus(textdata$text, docnames = textdata$doc_id)
+summary(text_corpus)
+cat(texts(text_corpus[1]))
+```
+
+
+Estadísticas del texto.
+```{r}
+
+```
+
