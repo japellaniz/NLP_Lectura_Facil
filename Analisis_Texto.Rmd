@@ -10,40 +10,96 @@ Inicializaciones y carga de librerías.
 rm(list = ls());cat("\014")
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 getwd()
-dir()
 options(stringsAsFactors = FALSE)
 library(readtext)
 library(quanteda)
+library(dplyr)
 ```
 
 
-Extracción del texto del pdf y escritura como csv.
+Extracción del texto del pdf (lectura desde el directorio data/)
 ```{r}
 data_file <- list.files(path="data", full.names = T, recursive = T)
-head(data_file)
-textdata <- readtext(data_file[1],docvarsfrom = "filepaths", dvsep="/")
-head(textdata)
-cat(substr((textdata$text[1]),0,300))
-write.csv2(textdata,file="data/textdata.csv", fileEncoding = "UTF-8")
-```
-
-
-Obtención del corpus.
-```{r}
-# textdata <- read.csv("data/textdata.csv", header = T, sep = ";", encoding = "UTF-8")
+textdata <- readtext(data_file[1],docvarsfrom = "filepaths", dvsep="/", encoding = "UTF-8")
 
 dim(textdata)
 colnames(textdata)
 textdata <- textdata[,1:2]
+```
 
+
+Obtención del corpus. En este caso es un solo documento.
+```{r}
 text_corpus <- corpus(textdata$text, docnames = textdata$doc_id)
 summary(text_corpus)
+glimpse(textdata)
 cat(texts(text_corpus[1]))
 ```
 
-
 Estadísticas del texto.
 ```{r}
+# Obtención de la matriz documento-característica (document-feature matrix)
+# Documentos en filas (solo tenemos 1) y términos en columnas.
+DTM <- dfm(text_corpus, tolower = TRUE, remove_punct = TRUE, remove_numbers = TRUE, remove=stopwords("spanish"), stem = TRUE)
+dim(DTM)
 
+# suma de valores por columna (frecuencia de palabras o términos)
+freqs <- colSums(DTM)
+# obtenemos vector de palabras
+words <- colnames(DTM)
+# combinamos palabras y sus frecuencias en un dataframe.
+wordlist <- data.frame(words, freqs)
+# reordenamos por frecuencia decreciente.
+wordIndexes <- order(wordlist[, "freqs"], decreasing = TRUE)
+wordlist <- wordlist[wordIndexes, ]
+# mostramos las palabras más frecuentes
+head(wordlist, 25)
 ```
+Comprobación de la ley de Zipf (la frecuencia con la que aparece una palabra en un documento es inversamente proporcional a su ranking).
+```{r}
+plot(wordlist$freqs , type = "l", lwd=2, main = "Rank frequency Plot", xlab="Rank", ylab ="Frequency")
+
+plot(wordlist$freqs , type = "l", log="xy", lwd=2, main = "Rank-Frequency Plot", xlab="log-Rank", ylab ="log-Frequency")
+```
+
+```{r}
+# marcamos las stopwords no eliminadas con anterioridad al obtener la matriz dfm
+spanishStopwords <- stopwords("es")
+stopwords_idx <- which(wordlist$words %in% spanishStopwords)
+# marcamos las palabras poco frecuentes
+low_frequent_idx <- which(wordlist$freqs < 10)
+# marcamos la unión de stopwords y poco frecuentes
+insignificant_idx <- union(stopwords_idx, low_frequent_idx)
+# nos quedamos con el rango de palabras que aportan signifcado al texto
+meaningful_range_idx <- setdiff(1:nrow(wordlist), insignificant_idx)
+# las dibujamos sobre la curva de Zipf
+plot(wordlist$freqs, type = "l", log="xy",lwd=2, main = "Rank-Frequency plot", xlab="Rank", ylab = "Frequency") +
+lines(meaningful_range_idx, wordlist$freqs[meaningful_range_idx], col = "green", lwd=2, type="p", pch=20)
+```
+Algunos datos y parámetros
+```{r}
+# Lista de palabras significantes
+wordlist[meaningful_range_idx,]
+
+# Proporción de términos que ocurren sólo una vez respecto al total del vocabulario
+freq_total <- nrow(wordlist)
+freq_uno <- nrow(wordlist[which(wordlist$freqs==1),])
+freq_uno/freq_total
+
+# Cálculo del type-token ratio (TTR) del corpus. El TTR es la fracción del número de tokens (palabras dividido por el número de types (repeticiones de cada palabra).
+num_tokens <- nrow(wordlist[meaningful_range_idx,])
+num_types <- sum(wordlist[meaningful_range_idx,]$freqs)
+TTR <- num_tokens/num_types
+```
+
+
+Nube de palabras.
+```{r}
+set.seed(100)
+textplot_wordcloud(DTM,min_size = 1, max_size = 4, min_count = 10, max_words = 100,  color = RColorBrewer::brewer.pal(8, "Dark2"))
+```
+
+
+
+
 
