@@ -65,6 +65,13 @@ titulos[[1]] <- stripWhitespace(titulos[[1]])
 preambulo <- titulos[[1]][1]
 # Limpiar preambulo y obtener tokens
 
+rm_words <- function(string, words) {
+  stopifnot(is.character(string), is.character(words))
+  spltted <- strsplit(string, " ", fixed = TRUE) # fixed = TRUE for speedup
+  vapply(spltted, function(x) paste(x[!tolower(x) %in% words], collapse = " "), character(1))
+}
+preambulo_sin_stopwords <- rm_words(preambulo, tm::stopwords("sp"))
+str_to_title(preambulo_sin_stopwords)
 
 #################################
 # Forma de extraer los apartados del preambulo
@@ -76,19 +83,43 @@ preambulo_sentences <- tibble(text = preambulo) %>%
   mutate(sentence_id = row_number()) %>%
   select(sentence_id, sentence)
 
+# nuevo
+preambulo_sentences_sin_stopwords <- tibble(text = str_to_title(preambulo_sin_stopwords)) %>%
+  unnest_tokens(sentence, text, token = "sentences") %>%
+  mutate(sentence_id = row_number()) %>%
+  select(sentence_id, sentence)
+#############################################
 
 preambulo_words <- preambulo_sentences %>%
   unnest_tokens(word, sentence)
 
-stop_words_sp = tibble(word = tm::stopwords("spanish"))
+
+stop_words_sp = c(word = tm::stopwords("spanish"))
 preambulo_words <- preambulo_words %>%
   anti_join(stop_words_sp, by = "word")
+
+# nuevo #################
+preambulo_sentences_sin_stopword <- preambulo_sentences
+for (i in 1:length(tm::stopwords("spanish"))){
+preambulo_sentences_sin_stopword$sentence2 <- str_replace_all(preambulo_sentences_sin_stopword$sentence, pattern = tm::stopwords("spanish")[1], "")
+}
+# nuevo ###############################################
+preambulo_bigrams <- preambulo_sentences %>%
+  unnest_tokens(word, sentence, token = "ngrams", n=2)
+############################################################
+###################
+
+
 
 
 
 # TextRank
 preambulo_summary <- textrank_sentences(data = preambulo_sentences, 
                                       terminology = preambulo_words)
+
+preambulo_summary <- textrank_sentences(data = preambulo_sentences, 
+                                        terminology = preambulo_bigrams)
+
 
 # Escogemos frases ordenadas según texto original
 preambulo_summary[["sentences"]] %>%
