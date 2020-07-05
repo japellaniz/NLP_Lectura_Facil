@@ -55,70 +55,103 @@ rm(list = setdiff(ls(),c("textdata","texto","pdf_text")));cat("\014")
 titulos <- str_split(texto, "TÍTULO")
 # Eliminamos espacios en blanco en exceso.
 titulos[[1]] <- stripWhitespace(titulos[[1]])
+# Inicializamos tablon
+tablon <- tibble(bloque = character(), sub_bloque = character(), n_text_rank = integer())
 
 
 # #############################################################################
 # Trabajamos con el preámbulo
 # #############################################################################
 
+
 # Tomamos el preámbulo completo
 preambulo <- titulos[[1]][1]
-# Limpiar preambulo y obtener tokens
+# Eliminamos espacio inicial
+preambulo <- str_replace_all(preambulo, regex("^\\s+\\d"), "")
+# Número de bloques del preámbulo
+bloques_preambulo <- length(str_extract_all(preambulo,regex("(?<=\\s)\\d(?=\\s[[:upper:]])"))[[1]])+1
+preambulo_bloques <- str_split(preambulo, regex("(?<=\\s)\\d(?=\\s[[:upper:]])"), n=bloques_preambulo)
+preambulo_bloques[[1]]
 
-rm_words <- function(string, words) {
-  stopifnot(is.character(string), is.character(words))
-  spltted <- strsplit(string, " ", fixed = TRUE) # fixed = TRUE for speedup
-  vapply(spltted, function(x) paste(x[!tolower(x) %in% words], collapse = " "), character(1))
+# Cálculo de n (nº de frases del resumen) para TextRank
+# Tasa de compresión tau=20%
+# Contador de frases de cada bloque
+for (i in 1:bloques_preambulo) {
+  numero_frases <- tibble(text = preambulo_bloques[[1]][i]) %>%
+    unnest_tokens(sentence, text, token = "sentences") %>%
+    mutate(sentence_id = row_number()) %>%
+    summarise(n = n())
+n <- as.integer(ceiling(0.2*numero_frases))
+tmp <- tibble(bloque ="Preambulo", sub_bloque = i, n_text_rank = n)
+tablon <- rbind(tablon,tmp)
 }
-preambulo_sin_stopwords <- rm_words(preambulo, tm::stopwords("sp"))
-str_to_title(preambulo_sin_stopwords)
 
-#################################
+
+
+
+
+##################################################################
 # Forma de extraer los apartados del preambulo
 str_extract_all(preambulo,regex("(?<=\\s)\\d(?=\\s[[:upper:]])"))
-##################################
+str_extract_all(preambulo,regex("\\d+"))
 
+##################################################################
+
+##################################################################
+# Trabajo con words como "terminology" para TextRank
+##################################################################
+# Lista de frases con stopwords
 preambulo_sentences <- tibble(text = preambulo) %>%
   unnest_tokens(sentence, text, token = "sentences") %>%
   mutate(sentence_id = row_number()) %>%
   select(sentence_id, sentence)
-
-# nuevo
-preambulo_sentences_sin_stopwords <- tibble(text = str_to_title(preambulo_sin_stopwords)) %>%
-  unnest_tokens(sentence, text, token = "sentences") %>%
-  mutate(sentence_id = row_number()) %>%
-  select(sentence_id, sentence)
-#############################################
-
+# Lista de palabras con stopwords
 preambulo_words <- preambulo_sentences %>%
   unnest_tokens(word, sentence)
-
-
-stop_words_sp = c(word = tm::stopwords("spanish"))
+# Lista de palabras sin stopwords
+stop_words_sp = tibble(word = tm::stopwords("spanish"))
 preambulo_words <- preambulo_words %>%
   anti_join(stop_words_sp, by = "word")
 
-# nuevo #################
-preambulo_sentences_sin_stopword <- preambulo_sentences
-for (i in 1:length(tm::stopwords("spanish"))){
-preambulo_sentences_sin_stopword$sentence2 <- str_replace_all(preambulo_sentences_sin_stopword$sentence, pattern = tm::stopwords("spanish")[1], "")
-}
-# nuevo ###############################################
-preambulo_bigrams <- preambulo_sentences %>%
-  unnest_tokens(word, sentence, token = "ngrams", n=2)
-############################################################
-###################
+# Eliminando números de las words
+# Lista de frases sin números
+preambulo_sin_numeros <- str_replace_all(preambulo, regex("\\d+"), "")
+preambulo_sentences_sin_numeros <- tibble(text = preambulo_sin_numeros) %>%
+  unnest_tokens(sentence, text, token = "sentences") %>%
+  mutate(sentence_id = row_number()) %>%
+  select(sentence_id, sentence)
+
+# Lista de palabras sin números y con stopwords
+preambulo_words_sin_numeros <- preambulo_sentences_sin_numeros %>%
+  unnest_tokens(word, sentence)
+# Lista de palabras sin números y sin stopwords
+stop_words_sp = tibble(word = tm::stopwords("spanish"))
+preambulo_words_sin_numeros <- preambulo_words_sin_numeros %>%
+  anti_join(stop_words_sp, by = "word")
+# Lista de palabras sin números, sin stopwords filtradas para n>=2
+preambulo_words_filtrado <- preambulo_words_sin_numeros %>%
+  select(sentence_id,word) %>% 
+  count(word, sort = TRUE) %>% 
+  filter(n>=2)
+preambulo_words_sin_numeros <- preambulo_words_sin_numeros %>% filter(word %in% preambulo_words_filtrado$word)
 
 
 
 
 
+
+########################################################################
 # TextRank
-preambulo_summary <- textrank_sentences(data = preambulo_sentences, 
-                                      terminology = preambulo_words)
+########################################################################
+# Función
+TextRank <- function(data, terminology) {
+preambulo_summary <- textrank_sentences(data = data, 
+                                      terminology = terminology)
+}
+##########################################################################
 
 preambulo_summary <- textrank_sentences(data = preambulo_sentences, 
-                                        terminology = preambulo_bigrams)
+                                        terminology = preambulo_words)
 
 
 # Escogemos frases ordenadas según texto original
@@ -152,3 +185,10 @@ preambulo_summary[["sentences"]] %>%
        title = "Nivel informativo de las frases",
        subtitle = 'Preambulo de la Ley',
        caption = "Source: BOE-A-1994-26003-consolidado_LAU.pdf")
+
+
+
+
+
+
+
