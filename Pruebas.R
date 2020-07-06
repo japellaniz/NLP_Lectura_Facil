@@ -1,9 +1,28 @@
 
+# #########################################################################
+# Carga de datos
+# #########################################################################
+
+# Extracción del texto del pdf con tm (obtenemos texto en páginas y metadatos)
+path <- "data/BOE-A-1994-26003-consolidado_LAU.pdf"
+reader <- readPDF(engine = "pdftools")
+pdf_text <- reader(elem = list(uri = path), language = "sp", id = "id1")
+tmp <- c()
+for (i in 1:length(pdf_text[[1]])){
+  tmp <- str_c(tmp,pdf_text[[1]][i])
+}
+textdata <- tibble(text = tmp)
+
+# Extracción del texto directamente sin paginar, con readtext.
+data_file <- list.files(path="data", full.names = T, recursive = T)
+textdata <- readtext(data_file[1],docvarsfrom = "filepaths", dvsep="/", encoding = "UTF-8")
+
 
 
 ###############################################################################
 # Trabajo con bigramas
 ###############################################################################
+
 # Eliminar stopwords del preambulo (stackoverflow)
 rm_words <- function(string, words) {
   stopifnot(is.character(string), is.character(words))
