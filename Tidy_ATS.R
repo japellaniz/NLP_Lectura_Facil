@@ -212,6 +212,16 @@ for (i in 1:length(articulos_por_titulo)) {
 }
 
 
+# #############################################################################
+# Trabajamos con bloque de Disposiciones
+# #############################################################################
+
+disposiciones_bloques <- 
+
+
+
+
+
 
 ##################################################################
 # Trabajo con words como "terminology" para TextRank
