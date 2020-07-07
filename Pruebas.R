@@ -68,3 +68,24 @@ preambulo_sentences <- tibble(text = preambulo) %>%
 preambulo_summary <- TextRank(preambulo_sentences, preambulo_bigrams_sin_stopwords)
 ##################################################################################
 ##################################################################################
+
+
+
+
+#######################################################################
+# Número de bloques del preámbulo
+bloques_preambulo <- length(str_extract_all(preambulo,regex("(?<=\\s)\\d(?=\\s[[:upper:]])"))[[1]])+1
+# Lista de bloques del preámbulo
+preambulo_bloques <- str_split(preambulo, regex("(?<=\\s)\\d(?=\\s[[:upper:]])"), n=bloques_preambulo)
+############################################################################
+
+
+##################################################################
+# Pruebas con expresiones reg.
+str_extract_all(articulos_por_titulo[[2]],regex("(?<=.)Artículo(?=\\s+[[:digit:]]+\\.)"))
+str_extract_all(articulos_por_titulo[[1]][1],regex("(?<=\\s)\\d(?=\\s[[:upper:]])"))
+str_extract_all(titulo_bloques, regex("(?<=\\s)\\d(?=\\.\\s[[:upper:]])"))
+str_extract_all(texto,regex("[[:alpha:]]{1}\\)"))
+temp <- temp %>% filter(!str_detect(temp$word,"[[:digit:]]"))
+
+##################################################################
