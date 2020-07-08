@@ -14,6 +14,7 @@ for (i in 1:length(pdf_text[[1]])){
 textdata <- tibble(text = tmp)
 
 # Extracción del texto directamente sin paginar, con readtext.
+library(readtext)
 data_file <- list.files(path="data", full.names = T, recursive = T)
 textdata <- readtext(data_file[1],docvarsfrom = "filepaths", dvsep="/", encoding = "UTF-8")
 
@@ -97,6 +98,94 @@ str_extract_all(disposiciones,regex("\\.(?=\\s\\d+\\.ª\\s[[:lower:]])"))
 ##################################################################
 
 
+#######################################################################
+# Trabajo con el índice
+########################################################################
+indice <- str_split(textdata$text,".+TEXTO CONSOLIDADO", n=2)[[1]][1]
+indice <- stripWhitespace(indice)
+indice_cabecera <- str_split(indice, regex("ÍNDICE"), n=2)[[1]][1]
+indice_cabecera
+indice <- str_split(indice, regex("ÍNDICE"), n=2)[[1]][2]
+indice <- str_replace_all(indice, regex("(BOLETÍN OFICIAL DEL ESTADO|LEGISLACIÓN CONSOLIDADA|Página\\s[[:digit:]]+)"), "")
+indice <- str_replace_all(indice, regex("\\.\\s\\d+"), "")
+indice <- str_replace_all(indice, regex("(?<=\\.)\\s\\."), "")
+indice <- stripWhitespace(indice)
+indice <- str_replace_all(indice, regex("(?<=[IVXLCM])\\."), ":")
+indice <- str_replace_all(indice, regex("(?<=Artículo\\s\\d{1,3})\\."), ":")
+
+indice_lineas <- tibble(text = indice) %>% 
+  unnest_tokens(linea, text, token = "sentences", to_lower = FALSE)
+
+tablon <- tibble(bloque = character(), sub_bloque = character(), n_text_rank = integer(), frase = character())
+
+
+
+
+numero_articulo <- 0
+for (i in 1:length(articulos_por_titulo)) {
+  linea_indice <- linea_indice + 1
+  tablon <- rbind(tablon,tibble(bloque = str_c("Título ", i), sub_bloque = NA, n_text_rank = NA, frase = indice_lineas$linea[linea_indice]))
+  for (j in 1:length(articulos_por_titulo[[i]])) {
+    # Si hay Capítulos en el Título
+    if (length(articulos_por_titulo[[i]]) > 1) {
+      linea_indice <- linea_indice + 1
+      tablon <- rbind(tablon,tibble(bloque = str_c("Título ", i, " Capítulo ", j), sub_bloque = i, n_text_rank = NA, frase = indice_lineas$linea[linea_indice]))
+    }
+    # Número de bloques de cada título (para titulos con y sin capítulos)
+    bloques_titulo <- length(str_extract_all(articulos_por_titulo[[i]][j],regex("(?<=.)Artículo(?=\\s+[[:digit:]]+\\.)"))[[1]])+1
+    # Lista de bloques
+    titulo_bloques <- str_split(articulos_por_titulo[[i]][j], regex("(?<=.)Artículo(?=\\s+[[:digit:]]+\\.)"), n=bloques_titulo)[[1]][2:bloques_titulo]
+    titulo_bloques <- list(str_replace_all(titulo_bloques, regex("\\s\\d+\\.(?=\\s[[:upper:]])"), ""))
+    for (k in 1:(bloques_titulo-1)) {
+      # "Tokenizamos" el artículo
+      frases_token <- tibble(text = titulo_bloques[[1]][k]) %>%
+        unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%  
+        mutate(sentence_id = row_number()) %>%
+        select(sentence_id, sentence) %>% 
+        filter(sentence_id != 1) # Eliminamos la primera frase que se corresponde con el título del artículo
+      # Cálculo del número de frases
+      numero_frases <- frases_token %>%
+        mutate(sentence_id = row_number()) %>%
+        summarise(n = n())
+      # Tenemos en cuenta que el número de frases sea significativo
+      if (numero_frases > 1) {
+        n <- as.integer(ceiling(0.2*numero_frases))
+        sentences <- DataSentences(frases_token)
+        words <- Terminology(frases_token)
+        articulos_summary <- TextRank(sentences, words)
+        frases_seleccionadas <- summary(articulos_summary, n=n, keep.sentence.order = TRUE)
+        # Almacenamiento en el tablón
+        linea_indice <- linea_indice + 1
+        numero_articulo <- numero_articulo + 1
+        # Si hay o no hay Capítulos
+        if (length(articulos_por_titulo[[i]]) > 1) {
+          tablon <- rbind(tablon,tibble(bloque = str_c("Título ", i, " Capítulo ", j, " Artículo ", numero_articulo), sub_bloque = k, n_text_rank = n, frase = str_c(indice_lineas$linea[linea_indice])))
+          tabla_parcial <- tibble(bloque =str_c("Título ", i, " Capítulo ", j, " Artículo ", numero_articulo), sub_bloque = k, n_text_rank = n, frase = frases_seleccionadas )
+          tablon <- rbind(tablon,tabla_parcial)
+        } else {
+          tablon <- rbind(tablon,tibble(bloque = str_c("Título ", i, " Artículo ", numero_articulo), sub_bloque = k, n_text_rank = n, frase = str_c(indice_lineas$linea[linea_indice])))
+          tabla_parcial <- tibble(bloque =str_c("Título ", i, " Artículo ", numero_articulo), sub_bloque = k, n_text_rank = n, frase = frases_seleccionadas )
+          tablon <- rbind(tablon,tabla_parcial)
+        }
+        # Si no es significativo (numero de frases = 1), se emplea la única frase existente
+      } else {
+        frases_seleccionadas <- frases_token$sentence
+        # Almacenamiento en el tablón
+        linea_indice <- linea_indice + 1
+        numero_articulo <- numero_articulo + 1
+        if (length(articulos_por_titulo[[i]]) > 1) {
+          tablon <- rbind(tablon,tibble(bloque = str_c("Título ", i, " Capítulo ", j, " Artículo ", numero_articulo), sub_bloque = k, n_text_rank = 1, frase = str_c(indice_lineas$linea[linea_indice])))
+          tabla_parcial <- tibble(bloque =str_c("Título ", i, " Capítulo ", j, " Artículo ", numero_articulo), sub_bloque = k, n_text_rank = 1, frase = frases_seleccionadas )
+          tablon <- rbind(tablon,tabla_parcial)
+        } else {
+          tablon <- rbind(tablon,tibble(bloque = str_c("Título ", i, " Artículo ", numero_articulo), sub_bloque = k, n_text_rank = 1, frase = str_c(indice_lineas$linea[linea_indice])))
+          tabla_parcial <- tibble(bloque =str_c("Título ", i, " Artículo ", numero_articulo), sub_bloque = k, n_text_rank = 1, frase = frases_seleccionadas )
+          tablon <- rbind(tablon,tabla_parcial)
+        }
+      }
+    }
+  }
+}
 
 
 

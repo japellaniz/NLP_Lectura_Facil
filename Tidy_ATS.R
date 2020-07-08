@@ -10,22 +10,23 @@
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Inicializaciones y carga de librerías ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+{
 library(tidyverse)
 library(tidytext)
 library(textrank)
-library(readtext)
 library(tm)
 library(fulltext)
-
+}
 rm(list = ls());cat("\014.")
 
-# Stopwords
+# Carga de stopwords del paquete tm.
 stop_words_sp = tibble(word = tm::stopwords("spanish"))
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Funciones ####
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Función TextRank. Algoritmo de resumen extractivo de textos, basado en PageRank de Google.
+{
 TextRank <- function(data, terminology) {
   preambulo_summary <- textrank_sentences(data = data, 
                                           terminology = terminology)
@@ -51,13 +52,14 @@ Terminology <- function(sub_bloque) {
     filter(!str_detect(word,"[[:digit:]]"))
   return(sub_bloque_words)
 }
-
+}
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Carga de datos ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # Extracción del texto con paquete fulltext (obtenemos texto en páginas y metadatos)
+{
 path <- "data/BOE-A-1994-26003-consolidado_LAU.pdf"
 pdf_text <- ft_extract(path)
 tmp <- c()
@@ -66,14 +68,13 @@ for (i in 1:length(pdf_text$data)){
 }
 # Data frame 1x1 con todo el texto crudo
 textdata <- tibble(text = tmp)
-
+}
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Preprocesado general del texto ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-# Eliminar el índice de la ley, la cabecera y textos repetitivos. 
-# Eliminamos índice:
+{
+# Separamos el índice de la ley, quitamos la cabecera y textos repetitivos. 
 texto <- str_split(textdata$text,".+TEXTO CONSOLIDADO", n=2)[[1]][2]
 # Eliminamos la cabecera del preámbulo:
 texto <- str_split(texto, "PREAMBULO", n=2)[[1]][2]
@@ -87,34 +88,50 @@ texto <- str_replace_all(texto,regex("\\d+\\.ª(?=\\s[[:upper:]])"), "")
 texto <- str_replace_all(texto,regex("\\d+\\.\\d+(?=\\s[[:upper:]])"), "")
 # Eliminamos anomalía del texto tipo "...cuarta. 3.ª del..." que hace división de frase artificial.
 texto <- str_replace_all(texto,regex("\\.(?=\\s\\d+\\.ª\\s[[:lower:]])"), "")
-
-
+}
+{
+# Trabajo con el índice
+indice <- str_split(textdata$text,".+TEXTO CONSOLIDADO", n=2)[[1]][1]
+indice <- stripWhitespace(indice)
+indice_cabecera <- str_split(indice, regex("ÍNDICE"), n=2)[[1]][1]
+indice_cabecera
+indice <- str_split(indice, regex("ÍNDICE"), n=2)[[1]][2]
+indice <- str_replace_all(indice, regex("(BOLETÍN OFICIAL DEL ESTADO|LEGISLACIÓN CONSOLIDADA|Página\\s[[:digit:]]+)"), "")
+indice <- str_replace_all(indice, regex("\\.\\s\\d+"), "")
+indice <- str_replace_all(indice, regex("(?<=\\.)\\s\\."), "")
+indice <- stripWhitespace(indice)
+indice <- str_replace_all(indice, regex("(?<=[IVXLCM])\\."), ":")
+indice <- str_replace_all(indice, regex("(?<=Artículo\\s\\d{1,3})\\."), ":")
+# Tabla de líneas de Índice
+indice_lineas <- tibble(text = indice) %>% 
+  unnest_tokens(linea, text, token = "sentences", to_lower = FALSE)
+}
 # Limpieza de entorno de trabajo.
 rm(list = c("i","path","tmp"));cat("\014")
 
-
-# Generamos la lista titulos que contiene Preambulo, Títulos y Disposiciones.
+{
+# Generamos la lista titulos que contiene Preámbulo, Títulos y Disposiciones.
 titulos <- str_split(texto, "TÍTULO")
 # Eliminamos espacios en blanco que pueda haber en exceso.
 titulos[[1]] <- stripWhitespace(titulos[[1]])
-
 # Obtenemos nº de documentos en que queda dividido en texto
 tit_fin <- length(titulos[[1]])
 # Separamos el último título de las disposiciones
 titulo_F <- str_split(titulos[[1]][tit_fin],"Disposición")
 titulos[[1]][tit_fin]<- titulo_F[[1]][1]
+# Obtenemos bloque de Disposiciones para uso posterior
 disposiciones <- titulo_F[[1]][2:length(titulo_F[[1]])]
 rm(titulo_F)
-
+}
 # Inicializamos tablon: data frame para guardar frases resumen y otros datos relativos al texto
 tablon <- tibble(bloque = character(), sub_bloque = character(), n_text_rank = integer(), frase = character())
-
+linea_indice <- 1
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Trabajamos con el Preámbulo ####
+# Preámbulo: procesado ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-
+{
 # Tomamos el preámbulo completo
 preambulo <- titulos[[1]][1]
 # Eliminamos espacio inicial
@@ -123,10 +140,10 @@ preambulo <- str_replace_all(preambulo, regex("^\\s+\\d"), "")
 bloques_preambulo <- length(str_extract_all(preambulo,regex("(?<=\\s)\\d(?=\\s[[:upper:]])"))[[1]])+1
 # Lista de bloques del preámbulo
 preambulo_bloques <- str_split(preambulo, regex("(?<=\\s)\\d(?=\\s[[:upper:]])"), n=bloques_preambulo)
-
+}
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Extracción de frases con TextRank del Preámbulo, por sub-bloques ####
+# Preámbulo: extracción de frases con TextRank, por sub-bloques ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Cálculo de n (nº de frases del resumen) para TextRank
 # Tasa de compresión tau=20% (se considera óptimo 15-30%)
@@ -141,23 +158,32 @@ for (i in 1:bloques_preambulo) {
   numero_frases <- frases_token %>%
     mutate(sentence_id = row_number()) %>%
     summarise(n = n())
-  # Redondeamos hacia arriba (aseguramos al menos una frase por bloque)
-  n <- as.integer(ceiling(0.2*numero_frases))
-  # Obtenemos "sentences" y "words" para TextRank
-  sentences <- DataSentences(frases_token)
-  words <- Terminology(frases_token)
-  # Ejecutamos TexRank
-  preambulo_summary <- TextRank(sentences, words)
-  frases_seleccionadas <- summary(preambulo_summary, n=n, keep.sentence.order = TRUE)
-  # Almacenamiento en el tablón
-  tabla_parcial <- tibble(bloque ="Preambulo", sub_bloque = i, n_text_rank = n, frase = frases_seleccionadas )
-  tablon <- rbind(tablon,tabla_parcial)
+  # Tenemos en cuenta que el número de frases sea significativo
+  if (numero_frases > 1) {
+    n <- as.integer(ceiling(0.2*numero_frases))
+    sentences <- DataSentences(frases_token)
+    words <- Terminology(frases_token)
+    preambulo_summary <- TextRank(sentences, words)
+    frases_seleccionadas <- summary(preambulo_summary, n=n, keep.sentence.order = TRUE)
+    # Almacenamiento en el tablón
+    tablon <- rbind(tablon,tibble(bloque = "Preámbulo", sub_bloque = i, n_text_rank = n, frase = str_c(indice_lineas$linea[linea_indice]," ", i)))
+    tabla_parcial <- tibble(bloque ="Preámbulo", sub_bloque = i, n_text_rank = n, frase = frases_seleccionadas )
+    tablon <- rbind(tablon,tabla_parcial)
+    # Si no es significativo (numero de frases = 1), se emplea la única frase existente
+  } else {
+    frases_seleccionadas <- frases_token$sentence
+    # Almacenamiento en el tablón
+    tablon <- rbind(tablon, tibble(bloque = "Preámbulo", sub_bloque = i, n_text_rank = n, frase = str_c(indice_lineas$linea[linea_indice]," ", i)))
+    tabla_parcial <- tibble(bloque ="Preámbulo", sub_bloque = i, n_text_rank = 1, frase = frases_seleccionadas )
+    tablon <- rbind(tablon,tabla_parcial)
+    
+  }
 }
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Trabajamos con bloque Títulos-Capítulos-Artículos ####
+# Títulos-Capítulos-Artículos: procesado ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
+{
 # Almacenamos los artículos por títulos: cada elemento de la lista se corresponde con un Título
 articulos_por_titulo <- list(NULL)
 # Lista intermedia para guardar los títulos que se dividen en capítulos (no todos los títulos)
@@ -176,10 +202,11 @@ for (i in 1:length(articulos_por_titulo)) {
     articulos_por_titulo[[i]][1:numero_capitulos] <- capitulo_bloques
   }
 }
+}
 
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Extracción de frases con TextRank del bloque Títulos-Capítulos-Artículos ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Títulos-Capítulos-Artículos: extracción de frases con TextRank del bloque  ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # Tenemos 3 bucles for para recorrer Títulos (i), Capítulos (j) y Artículos (k), la unidad
 # de texto para TextRank
@@ -226,7 +253,7 @@ for (i in 1:length(articulos_por_titulo)) {
 
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Trabajamos con bloque de Disposiciones ####
+# Disposiciones: procesado ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # tablon <- tibble(bloque = character(), sub_bloque = character(), n_text_rank = integer(), frase = character())
 
@@ -244,7 +271,7 @@ bloques_disposiciones <- length(disposiciones_sin_titulo)
 disposiciones_bloques <- list(disposiciones_sin_titulo)  
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Extracción de frases con TextRank de las Disposiciones, por sub-bloques ####
+# Disposiciones: extracción de frases con TextRank, por sub-bloques ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Cálculo de n (nº de frases del resumen) para TextRank
 # Tasa de compresión tau=20% (se considera óptimo 15-30%)
