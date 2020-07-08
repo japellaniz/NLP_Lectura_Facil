@@ -1,6 +1,15 @@
 
+# 
+# Programa Big Data y Business Intelligence 2019/2020
+# Universidad de Deusto
+# Modulo 2.2. Tecnología y Desarrollo en Big Data
+# Proyecto: Resumen Automático de Textos legales
+# 
 
-# Inicializaciones y carga de librerías
+
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Inicializaciones y carga de librerías ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++
 library(tidyverse)
 library(tidytext)
 library(textrank)
@@ -13,9 +22,9 @@ rm(list = ls());cat("\014.")
 # Stopwords
 stop_words_sp = tibble(word = tm::stopwords("spanish"))
 
-##########################################################################
-# Funciones
-##########################################################################
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Funciones ####
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Función TextRank. Algoritmo de resumen extractivo de textos, basado en PageRank de Google.
 TextRank <- function(data, terminology) {
   preambulo_summary <- textrank_sentences(data = data, 
@@ -44,9 +53,9 @@ Terminology <- function(sub_bloque) {
 }
 
 
-# #########################################################################
-# Carga de datos
-# #########################################################################
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Carga de datos ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # Extracción del texto con paquete fulltext (obtenemos texto en páginas y metadatos)
 path <- "data/BOE-A-1994-26003-consolidado_LAU.pdf"
@@ -59,9 +68,9 @@ for (i in 1:length(pdf_text$data)){
 textdata <- tibble(text = tmp)
 
 
-# ############################################################################
-# Preprocesado general del texto 
-# #############################################################################
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Preprocesado general del texto ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # Eliminar el índice de la ley, la cabecera y textos repetitivos. 
 # Eliminamos índice:
@@ -72,6 +81,14 @@ texto <- str_split(texto, "PREAMBULO", n=2)[[1]][2]
 texto <- str_replace_all(texto, regex("(BOLETÍN OFICIAL DEL ESTADO|LEGISLACIÓN CONSOLIDADA|Página\\s[[:digit:]]+)"), "")
 # Eliminamos indicadores alfabéticos de párrafo o línea tipo a), b),...
 texto <- str_replace_all(texto, regex("\\s+[[:alpha:]]{1}\\)"), "")
+# Eliminamos enumeraciones tipo 1.ª, 2.ª,...
+texto <- str_replace_all(texto,regex("\\d+\\.ª(?=\\s[[:upper:]])"), "")
+# Eliminamos enumeraciones tipo 10.1, 2.3,...
+texto <- str_replace_all(texto,regex("\\d+\\.\\d+(?=\\s[[:upper:]])"), "")
+# Eliminamos anomalía del texto tipo "...cuarta. 3.ª del..." que hace división de frase artificial.
+texto <- str_replace_all(texto,regex("\\.(?=\\s\\d+\\.ª\\s[[:lower:]])"), "")
+
+
 # Limpieza de entorno de trabajo.
 rm(list = c("i","path","tmp"));cat("\014")
 
@@ -93,9 +110,9 @@ rm(titulo_F)
 tablon <- tibble(bloque = character(), sub_bloque = character(), n_text_rank = integer(), frase = character())
 
 
-# #############################################################################
-# Trabajamos con el Preámbulo
-# #############################################################################
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Trabajamos con el Preámbulo ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 # Tomamos el preámbulo completo
@@ -108,16 +125,16 @@ bloques_preambulo <- length(str_extract_all(preambulo,regex("(?<=\\s)\\d(?=\\s[[
 preambulo_bloques <- str_split(preambulo, regex("(?<=\\s)\\d(?=\\s[[:upper:]])"), n=bloques_preambulo)
 
 
-##################################################################
-# Extracción de frases con TextRank del Preámbulo, por sub-bloques
-##################################################################
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Extracción de frases con TextRank del Preámbulo, por sub-bloques ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Cálculo de n (nº de frases del resumen) para TextRank
 # Tasa de compresión tau=20% (se considera óptimo 15-30%)
 # Contador de frases de cada bloque del preámbulo
 for (i in 1:bloques_preambulo) {
   # "Tokenizamos" el bloque en frases
   frases_token <- tibble(text = preambulo_bloques[[1]][i]) %>%
-    unnest_tokens(sentence, text, token = "sentences") %>%  
+    unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%  
     mutate(sentence_id = row_number()) %>%
     select(sentence_id, sentence)
   # Obtenemos número de frases que salen de la "tokenización"
@@ -136,14 +153,10 @@ for (i in 1:bloques_preambulo) {
   tabla_parcial <- tibble(bloque ="Preambulo", sub_bloque = i, n_text_rank = n, frase = frases_seleccionadas )
   tablon <- rbind(tablon,tabla_parcial)
 }
-# Resumen del preambulo 
-tablon %>% select(bloque,frase) %>% 
-  filter(bloque == "Preambulo") %>% 
-  select(frase)
 
-# #############################################################################
-# Trabajamos con bloque Títulos-Capítulos-Artículos
-# #############################################################################
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Trabajamos con bloque Títulos-Capítulos-Artículos ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # Almacenamos los artículos por títulos: cada elemento de la lista se corresponde con un Título
 articulos_por_titulo <- list(NULL)
@@ -164,9 +177,9 @@ for (i in 1:length(articulos_por_titulo)) {
   }
 }
 
-##############################################################################
-# Extracción de frases con TextRank del bloque Tiítulos-Capitulos-Artículos
-##############################################################################
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Extracción de frases con TextRank del bloque Títulos-Capítulos-Artículos ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # Tenemos 3 bucles for para recorrer Títulos (i), Capítulos (j) y Artículos (k), la unidad
 # de texto para TextRank
@@ -181,7 +194,7 @@ for (i in 1:length(articulos_por_titulo)) {
     for (k in 1:(bloques_titulo-1)) {
       # "Tokenizamos" el artículo
       frases_token <- tibble(text = titulo_bloques[[1]][k]) %>%
-        unnest_tokens(sentence, text, token = "sentences") %>%  
+        unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%  
         mutate(sentence_id = row_number()) %>%
         select(sentence_id, sentence) %>% 
         filter(sentence_id != 1) # Eliminamos la primera frase que se corresponde con el título del artículo
@@ -212,108 +225,57 @@ for (i in 1:length(articulos_por_titulo)) {
 }
 
 
-# #############################################################################
-# Trabajamos con bloque de Disposiciones
-# #############################################################################
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Trabajamos con bloque de Disposiciones ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# tablon <- tibble(bloque = character(), sub_bloque = character(), n_text_rank = integer(), frase = character())
 
-disposiciones_bloques <-   
+# Eliminamos firma final
+disposiciones[length(disposiciones)] <- str_split(disposiciones[length(disposiciones)],regex("Por tanto, Mando"), n=2)[[1]][1]
+# Extraemos el texto de las disposiciones sin los títulos
+disposiciones_sin_titulo <- disposiciones
+for (i in 1:length(disposiciones)) {
+disposiciones_sin_titulo[i] <- str_split(disposiciones[i],regex("\\.\\s(?=[[:upper:]])"), n=3)[[1]][3]
+}
 
+# Número de diposiciones en el texto
+bloques_disposiciones <- length(disposiciones_sin_titulo)
+# Disposiciones en lista
+disposiciones_bloques <- list(disposiciones_sin_titulo)  
 
-
-
-
-
-##################################################################
-# Trabajo con words como "terminology" para TextRank
-##################################################################
-# Lista de frases con stopwords
-preambulo_sentences <- tibble(text = preambulo) %>%
-  unnest_tokens(sentence, text, token = "sentences") %>%
-  mutate(sentence_id = row_number()) %>%
-  select(sentence_id, sentence)
-# Lista de palabras con stopwords
-preambulo_words <- preambulo_sentences %>%
-  unnest_tokens(word, sentence)
-# Lista de palabras sin stopwords
-stop_words_sp = tibble(word = tm::stopwords("spanish"))
-preambulo_words <- preambulo_words %>%
-  anti_join(stop_words_sp, by = "word")
-
-# Eliminando números de las words
-# Lista de frases sin números
-preambulo_sin_numeros <- str_replace_all(preambulo, regex("\\d+"), "")
-preambulo_sentences_sin_numeros <- tibble(text = preambulo_sin_numeros) %>%
-  unnest_tokens(sentence, text, token = "sentences") %>%
-  mutate(sentence_id = row_number()) %>%
-  select(sentence_id, sentence)
-
-# Lista de palabras sin números y con stopwords
-preambulo_words_sin_numeros <- preambulo_sentences_sin_numeros %>%
-  unnest_tokens(word, sentence)
-# Lista de palabras sin números y sin stopwords
-stop_words_sp = tibble(word = tm::stopwords("spanish"))
-preambulo_words_sin_numeros <- preambulo_words_sin_numeros %>%
-  anti_join(stop_words_sp, by = "word")
-# Lista de palabras sin números, sin stopwords filtradas para n>=2
-preambulo_words_filtrado <- preambulo_words_sin_numeros %>%
-  select(sentence_id,word) %>% 
-  count(word, sort = TRUE) %>% 
-  filter(n>=2)
-preambulo_words_sin_numeros <- preambulo_words_sin_numeros %>% filter(word %in% preambulo_words_filtrado$word)
-
-
-
-
-
-
-
-
-
-########################################################################
-# TextRank
-########################################################################
-preambulo_summary <- textrank_sentences(data = preambulo_sentences, 
-                                        terminology = preambulo_words)
-########################################################################
-
-
-
-
-# Escogemos frases ordenadas según texto original
-preambulo_summary[["sentences"]] %>%
-  arrange(desc(textrank)) %>% 
-  slice(1:5) %>%
-  arrange(textrank_id) %>% 
-  pull(sentence)
-# Orden de las frases en el texto original
-preambulo_summary[["sentences"]] %>%
-  arrange(desc(textrank)) %>% 
-  slice(1:5) %>%
-  arrange(textrank_id) %>% 
-  pull(textrank_id)
-# Puntuación obtenida en el ranking de las frases ya ordenadas
-preambulo_summary[["sentences"]] %>%
-  arrange(desc(textrank)) %>% 
-  slice(1:5) %>%
-  arrange(textrank_id) %>% 
-  pull(textrank)
-
-
-preambulo_summary[["sentences"]] %>%
-  ggplot(aes(textrank_id, textrank, fill = textrank_id)) +
-  geom_col() +
-  theme_minimal() +
-  scale_fill_viridis_c() +
-  guides(fill = "none") +
-  labs(x = "Sentence",
-       y = "TextRank score",
-       title = "Nivel informativo de las frases",
-       subtitle = 'Preambulo de la Ley',
-       caption = "Source: BOE-A-1994-26003-consolidado_LAU.pdf")
-
-
-
-
-
-
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Extracción de frases con TextRank de las Disposiciones, por sub-bloques ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Cálculo de n (nº de frases del resumen) para TextRank
+# Tasa de compresión tau=20% (se considera óptimo 15-30%)
+# Contador de frases de cada bloque de las disposiciones
+for (i in 1:bloques_disposiciones) {
+  # "Tokenizamos" el bloque en frases
+  frases_token <- tibble(text = disposiciones_bloques[[1]][i]) %>%
+    unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%  
+    mutate(sentence_id = row_number()) %>%
+    select(sentence_id, sentence)
+  # Obtenemos número de frases que salen de la "tokenización"
+  numero_frases <- frases_token %>%
+    mutate(sentence_id = row_number()) %>%
+    summarise(n = n())
+  # Tenemos en cuenta que el número de frases sea significativo
+  if (numero_frases > 1) {
+    n <- as.integer(ceiling(0.2*numero_frases))
+    sentences <- DataSentences(frases_token)
+    words <- Terminology(frases_token)
+    disposiciones_summary <- TextRank(sentences, words)
+    frases_seleccionadas <- summary(disposiciones_summary, n=n, keep.sentence.order = TRUE)
+    # Almacenamiento en el tablón
+    tabla_parcial <- tibble(bloque ="Disposiciones", sub_bloque = i, n_text_rank = n, frase = frases_seleccionadas )
+    tablon <- rbind(tablon,tabla_parcial)
+    # Si no es significativo (numero de frases = 1), se emplea la única frase existente
+  } else {
+    frases_seleccionadas <- frases_token$sentence
+    # Almacenamiento en el tablón
+    tabla_parcial <- tibble(bloque ="Disposiciones", sub_bloque = i, n_text_rank = 1, frase = frases_seleccionadas )
+    tablon <- rbind(tablon,tabla_parcial)
+    
+  }
+}
 

@@ -33,7 +33,7 @@ Obtención del corpus. En este caso es un solo documento.
 text_corpus <- corpus(textdata$text, docnames = textdata$doc_id)
 summary(text_corpus)
 glimpse(textdata)
-cat(texts(text_corpus[1]))
+# cat(texts(text_corpus[1]))
 ```
 
 Estadísticas del texto.
@@ -54,6 +54,13 @@ wordIndexes <- order(wordlist[, "freqs"], decreasing = TRUE)
 wordlist <- wordlist[wordIndexes, ]
 # mostramos las palabras más frecuentes
 head(wordlist, 25)
+
+wordlist %>% filter(freqs>30 & !str_detect(words, "\\d+")) %>% 
+  mutate(words=reorder(words,freqs)) %>% 
+  ggplot(aes(words, freqs))+
+  geom_col()+
+  xlab(NULL)+
+  coord_flip()
 ```
 Comprobación de la ley de Zipf (la frecuencia con la que aparece una palabra en un documento es inversamente proporcional a su ranking).
 ```{r}

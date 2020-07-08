@@ -86,6 +86,114 @@ str_extract_all(articulos_por_titulo[[2]],regex("(?<=.)Artículo(?=\\s+[[:digit:
 str_extract_all(articulos_por_titulo[[1]][1],regex("(?<=\\s)\\d(?=\\s[[:upper:]])"))
 str_extract_all(titulo_bloques, regex("(?<=\\s)\\d(?=\\.\\s[[:upper:]])"))
 str_extract_all(texto,regex("[[:alpha:]]{1}\\)"))
+str_extract(disposiciones[1],regex("(?<=.[[:upper:]].)[[:upper:]]"))
+str_extract_all(disposiciones[1],regex("\\s(?=[[:upper:]])"))[[1]][2]
+str_extract_all(disposiciones[1],regex("\\s(?=[[:upper:]])"))
+str_split(disposiciones[21],regex("\\.\\s(?=[[:upper:]])"), n=3)[[1]][3]
+str_extract(disposiciones[21], regex("Por tanto, Mando"))
 temp <- temp %>% filter(!str_detect(temp$word,"[[:digit:]]"))
+str_extract_all(disposiciones,regex("\\.(?=\\s\\d+\\.ª\\s[[:lower:]])"))
 
 ##################################################################
+
+
+
+
+
+
+
+
+##################################################################
+# Trabajo con words como "terminology" para TextRank
+##################################################################
+# Lista de frases con stopwords
+preambulo_sentences <- tibble(text = preambulo) %>%
+  unnest_tokens(sentence, text, token = "sentences") %>%
+  mutate(sentence_id = row_number()) %>%
+  select(sentence_id, sentence)
+# Lista de palabras con stopwords
+preambulo_words <- preambulo_sentences %>%
+  unnest_tokens(word, sentence)
+# Lista de palabras sin stopwords
+stop_words_sp = tibble(word = tm::stopwords("spanish"))
+preambulo_words <- preambulo_words %>%
+  anti_join(stop_words_sp, by = "word")
+
+# Eliminando números de las words
+# Lista de frases sin números
+preambulo_sin_numeros <- str_replace_all(preambulo, regex("\\d+"), "")
+preambulo_sentences_sin_numeros <- tibble(text = preambulo_sin_numeros) %>%
+  unnest_tokens(sentence, text, token = "sentences") %>%
+  mutate(sentence_id = row_number()) %>%
+  select(sentence_id, sentence)
+
+# Lista de palabras sin números y con stopwords
+preambulo_words_sin_numeros <- preambulo_sentences_sin_numeros %>%
+  unnest_tokens(word, sentence)
+# Lista de palabras sin números y sin stopwords
+stop_words_sp = tibble(word = tm::stopwords("spanish"))
+preambulo_words_sin_numeros <- preambulo_words_sin_numeros %>%
+  anti_join(stop_words_sp, by = "word")
+# Lista de palabras sin números, sin stopwords filtradas para n>=2
+preambulo_words_filtrado <- preambulo_words_sin_numeros %>%
+  select(sentence_id,word) %>% 
+  count(word, sort = TRUE) %>% 
+  filter(n>=2)
+preambulo_words_sin_numeros <- preambulo_words_sin_numeros %>% filter(word %in% preambulo_words_filtrado$word)
+
+
+
+
+
+
+
+
+
+########################################################################
+# TextRank
+########################################################################
+preambulo_summary <- textrank_sentences(data = preambulo_sentences, 
+                                        terminology = preambulo_words)
+########################################################################
+
+
+
+
+# Escogemos frases ordenadas según texto original
+preambulo_summary[["sentences"]] %>%
+  arrange(desc(textrank)) %>% 
+  slice(1:5) %>%
+  arrange(textrank_id) %>% 
+  pull(sentence)
+# Orden de las frases en el texto original
+preambulo_summary[["sentences"]] %>%
+  arrange(desc(textrank)) %>% 
+  slice(1:5) %>%
+  arrange(textrank_id) %>% 
+  pull(textrank_id)
+# Puntuación obtenida en el ranking de las frases ya ordenadas
+preambulo_summary[["sentences"]] %>%
+  arrange(desc(textrank)) %>% 
+  slice(1:5) %>%
+  arrange(textrank_id) %>% 
+  pull(textrank)
+
+
+preambulo_summary[["sentences"]] %>%
+  ggplot(aes(textrank_id, textrank, fill = textrank_id)) +
+  geom_col() +
+  theme_minimal() +
+  scale_fill_viridis_c() +
+  guides(fill = "none") +
+  labs(x = "Sentence",
+       y = "TextRank score",
+       title = "Nivel informativo de las frases",
+       subtitle = 'Preambulo de la Ley',
+       caption = "Source: BOE-A-1994-26003-consolidado_LAU.pdf")
+
+
+
+
+
+
+
