@@ -122,13 +122,24 @@ titulos[[1]][tit_fin]<- titulo_F[[1]][1]
 disposiciones <- titulo_F[[1]][2:length(titulo_F[[1]])]
 rm(titulo_F)
 }
+{
 # Inicializamos tablon: data frame para guardar frases resumen y otros datos relativos al texto
 tablon <- tibble(bloque = character(), 
                  sub_bloque = character(), 
                  n_text_rank = integer(), 
                  frase = character())
-linea_indice <- 1
 
+frases_cabecera <- tibble(text = indice_cabecera) %>%
+  unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%  
+  mutate(sentence_id = row_number()) %>%
+  select(sentence_id, sentence)
+
+tablon <- tibble(bloque = "Cabecera", 
+                 sub_bloque = NA, 
+                 n_text_rank = NA, 
+                 frase = frases_cabecera$sentence)
+linea_indice <- 1
+}
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Preámbulo: procesado ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -226,7 +237,7 @@ for (i in 1:length(articulos_por_titulo)) {
 
 # Tenemos 3 bucles for para recorrer Títulos (i), Capítulos (j) y Artículos (k), la unidad
 # de texto para TextRank
-
+{
 numero_articulo <- 0
 for (i in 1:length(articulos_por_titulo)) {
   linea_indice <- linea_indice + 1
@@ -331,7 +342,7 @@ for (i in 1:length(articulos_por_titulo)) {
   }
 }
 
-
+}
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Disposiciones: procesado ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -357,6 +368,7 @@ disposiciones_bloques <- list(disposiciones_sin_titulo)
 # Cálculo de n (nº de frases del resumen) para TextRank
 # Tasa de compresión tau=20% (se considera óptimo 15-30%)
 # Contador de frases de cada bloque de las disposiciones
+{
 for (i in 1:bloques_disposiciones) {
   linea_indice <- linea_indice + 1
   # Cabeceras de los tres tipos de Disposiciones
@@ -438,4 +450,4 @@ for (i in 1:bloques_disposiciones) {
   }
 }
 
-
+}
