@@ -16,6 +16,7 @@ library(tidytext)
 library(textrank)
 library(tm)
 library(fulltext)
+library(flextable)
 }
 rm(list = ls());cat("\014")
 
@@ -453,3 +454,34 @@ for (i in 1:bloques_disposiciones) {
 }
 
 }
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Presentación del resumen de la ley ####
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Usamos paquete flextable
+{
+t <- tibble(LAU = tablon$frase)
+ft <- flextable(t) 
+ft <- ft %>% 
+  theme_alafoli() %>% 
+  set_header_labels(LAU = "Resumen de la Ley de Arrendamientos Urbanos") %>% 
+  fontsize(part = "body", size = 16) %>% 
+  fontsize(part = "header", size = 20) %>% 
+  align(align = "center", part = "all") %>% 
+  autofit() %>% 
+  font(fontname = "Arial") %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^Preámbulo"))) %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^TÍTULO"))) %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^CAPÍTULO"))) %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^Artículo"))) %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^Disposici")))
+ft
+# Guardamos el resumen en un .docx reformateando los tamaños de las fuentes
+ft <- fontsize(ft, part = "body", size = 12)
+ft <- fontsize(ft, part = "header", size = 14)
+save_as_docx(ft, path = "data/resumen_output.docx")
+}
+
+  
+  
+  
+  

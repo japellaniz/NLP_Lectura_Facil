@@ -230,6 +230,44 @@ grid.arrange(
   tableGrob(mtcars[1:4, 1:2], theme=tt2),
   tableGrob(mtcars[1:4, 1:2], theme=tt3),
   nrow=1)
+
+
+
+library(formattable)
+t <- tibble(LAU = tablon$frase)
+formattable(t, align = "c")
+
+
+library(flextable)
+library(officer)
+
+ft <- flextable(t)
+ft <- theme_alafoli(ft) %>% 
+ft <- set_header_labels(ft, LAU = "Resumen de la Ley de Arrendamientos Urbanos")
+ft <- fontsize(ft, part = "body", size = 16)
+ft <- fontsize(ft, part = "header", size = 20)
+ft <- align(ft, align = "center", part = "all")
+ft <- autofit(ft)
+ft <- font(ft, fontname = "Arial")
+ft <- bold(ft, i = ~ str_detect(ft$body$dataset$LAU,regex("^Preámbulo")))
+ft <- bold(ft, i = ~ str_detect(ft$body$dataset$LAU,regex("^TÍTULO")))
+ft <- bold(ft, i = ~ str_detect(ft$body$dataset$LAU,regex("^CAPÍTULO")))
+ft <- bold(ft, i = ~ str_detect(ft$body$dataset$LAU,regex("^Artículo")))
+ft <- bold(ft, i = ~ str_detect(ft$body$dataset$LAU,regex("^Disposici")))
+
+ft
+dim_pretty(ft, part="all")
+ft <- fit_to_width(ft, max_width = 50)
+
+
+ft <- fontsize(ft, part = "body", size = 12)
+ft <- fontsize(ft, part = "header", size = 14)
+save_as_docx(ft, path = "data/resumen_output.docx")
+
+library(pagedown)
+
+
+
 ########################################################################
 # TextRank
 ########################################################################
