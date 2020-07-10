@@ -94,6 +94,7 @@ str_split(disposiciones[21],regex("\\.\\s(?=[[:upper:]])"), n=3)[[1]][3]
 str_extract(disposiciones[21], regex("Por tanto, Mando"))
 temp <- temp %>% filter(!str_detect(temp$word,"[[:digit:]]"))
 str_extract_all(disposiciones,regex("\\.(?=\\s\\d+\\.ª\\s[[:lower:]])"))
+str_extract_all(indice_lineas$linea,regex("\\s\\."))
 
 ##################################################################
 
@@ -118,7 +119,16 @@ indice_lineas <- tibble(text = indice) %>%
 
 tablon <- tibble(bloque = character(), sub_bloque = character(), n_text_rank = integer(), frase = character())
 
+frases_token <- tibble(text = indice_cabecera) %>%
+  unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%  
+  mutate(sentence_id = row_number()) %>%
+  select(sentence_id, sentence)
 
+tablon <- tibble(bloque = "Cabecera", 
+                 sub_bloque = NA, 
+                 n_text_rank = NA, 
+                 frase = frases_token)
+linea_indice <- 1
 
 
 
@@ -161,13 +171,65 @@ preambulo_words_filtrado <- preambulo_words_sin_numeros %>%
 preambulo_words_sin_numeros <- preambulo_words_sin_numeros %>% filter(word %in% preambulo_words_filtrado$word)
 
 
+########################################################################
+# Exportar a pdf
+########################################################################
+library(grDevices)
+library(grid)
+library(gridExtra)
+maxrow <- 35
+npages <- ceiling((nrow(tablon)/maxrow))
+pdf("test.pdf", height=11, width=8.5)
+idx <- seq(1, maxrow)
+tableGrob(tablon$frase[idx], rows = NULL, cols = NULL, theme = tt3)
+grid.table(tablon$frase[idx], rows = NULL)
+for (i in 2:npages) {
+  grid.newpage();
+  if (i*maxrow <= nrow(tablon)) {
+    idx = seq(1+((i-1)*maxrow), i*maxrow)
+  } else {
+    idx = seq(1+((i-1)*maxrow), nrow(tablon))
+  }
+  grid.table(tablon$frase[idx], rows = NULL)
+}
+dev.off()
 
 
 
+library(gridExtra)
 
+toPdf=function(textfile="pathToFile", pdfpath="pathToPdf"){
+  text=read.table(textfile, stringsAsFactors=FALSE)
+  grb=textGrob(apply(tablon$frase, 2, paste, collapse="\n"))
+  pdf(pdfpath)
+  grid.arrange(grb)
+  dev.off()
+}
 
+sink("sink_examp.txt")
+print(tablon$frase)
+sink("sink_examp.txt", append=FALSE)
 
+require(rmarkdown)
+my_text <- readLines("sink_examp.txt", encoding = "UTF-8") 
+cat(my_text, sep="  \n", file = "my_text.Rmd")
+render("my_text.Rmd", pdf_document())
+file.remove("my_text.Rmd") #cleanup
+file.remove("sink_examp.txt") #cleanup
 
+tinytex::tlmgr_update()
+library(tinytex)
+
+tt1 <- ttheme_default()
+tt2 <- ttheme_default(core=list(fg_params=list(hjust=1, x=0.9)),
+                      rowhead=list(fg_params=list(hjust=1, x=0.95)))
+tt3 <- ttheme_default(core=list(fg_params=list(hjust=0, x=0.1)),
+                      rowhead=list(fg_params=list(hjust=0, x=0)))
+grid.arrange(
+  tableGrob(mtcars[1:4, 1:2], theme=tt1),
+  tableGrob(mtcars[1:4, 1:2], theme=tt2),
+  tableGrob(mtcars[1:4, 1:2], theme=tt3),
+  nrow=1)
 ########################################################################
 # TextRank
 ########################################################################

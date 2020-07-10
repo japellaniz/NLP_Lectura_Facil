@@ -1,32 +1,36 @@
+---
+title: "Resumen Automático de Textos legales"
+output: html_notebook
 
-# 
-# Programa Big Data y Business Intelligence 2019/2020
-# Universidad de Deusto
-# Modulo 2.2. Tecnología y Desarrollo en Big Data
-# Proyecto: Resumen Automático de Textos legales
-# 
+---
 
 
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Inicializaciones y carga de librerías ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++
-{
+ Programa Big Data y Business Intelligence 2019/2020
+ Universidad de Deusto
+ Modulo 2.2. Tecnología y Desarrollo en Big Data
+ Proyecto: Resumen Automático de Textos legales
+ 
+
+
+
+# Inicializaciones y carga de librerías 
+```{r}
+rm(list = ls());cat("\014")
+
 library(tidyverse)
 library(tidytext)
 library(textrank)
 library(tm)
 library(fulltext)
-}
-rm(list = ls());cat("\014")
 
 # Carga de stopwords del paquete tm.
 stop_words_sp = tibble(word = tm::stopwords("spanish"))
 
-#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Funciones ####
-#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+```
+
+# Funciones
+```{r}
 # Función TextRank. Algoritmo de resumen extractivo de textos, basado en PageRank de Google.
-{
 TextRank <- function(data, terminology) {
   preambulo_summary <- textrank_sentences(data = data, 
                                           terminology = terminology)
@@ -52,14 +56,12 @@ Terminology <- function(sub_bloque) {
     filter(!str_detect(word,"[[:digit:]]"))
   return(sub_bloque_words)
 }
-}
 
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Carga de datos ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+```
 
+# Carga de datos
+```{r}
 # Extracción del texto con paquete fulltext (obtenemos texto en páginas y metadatos)
-{
 path <- "data/BOE-A-1994-26003-consolidado_LAU.pdf"
 pdf_text <- ft_extract(path)
 tmp <- c()
@@ -68,12 +70,11 @@ for (i in 1:length(pdf_text$data)){
 }
 # Data frame 1x1 con todo el texto crudo
 textdata <- tibble(text = tmp)
-}
 
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Preprocesado general del texto ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-{
+```
+
+# Preprocesado general del texto
+```{r}
 # Separamos el índice de la ley, quitamos la cabecera y textos repetitivos. 
 texto <- str_split(textdata$text,".+TEXTO CONSOLIDADO", n=2)[[1]][2]
 # Eliminamos la cabecera del preámbulo:
@@ -88,8 +89,8 @@ texto <- str_replace_all(texto, regex("\\d+\\.ª(?=\\s[[:upper:]])"), "")
 texto <- str_replace_all(texto, regex("\\d+\\.\\d+(?=\\s[[:upper:]])"), "")
 # Eliminamos anomalía del texto tipo "...cuarta. 3.ª del..." que hace división de frase artificial.
 texto <- str_replace_all(texto, regex("\\.(?=\\s\\d+\\.ª\\s[[:lower:]])"), "")
-}
-{
+
+
 # Trabajo con el índice
 indice <- str_split(textdata$text,".+TEXTO CONSOLIDADO", n=2)[[1]][1]
 indice <- stripWhitespace(indice)
@@ -106,11 +107,11 @@ indice <- str_replace_all(indice, regex("\\s\\."), "\\.")
 # Tabla de líneas de Índice
 indice_lineas <- tibble(text = indice) %>% 
   unnest_tokens(linea, text, token = "sentences", to_lower = FALSE)
-}
+
 # Limpieza de entorno de trabajo.
 rm(list = c("i","path","tmp"));cat("\014")
 
-{
+
 # Generamos la lista titulos que contiene Preámbulo, Títulos y Disposiciones.
 titulos <- str_split(texto, "TÍTULO")
 # Eliminamos espacios en blanco que pueda haber en exceso.
@@ -123,8 +124,8 @@ titulos[[1]][tit_fin]<- titulo_F[[1]][1]
 # Obtenemos bloque de Disposiciones para uso posterior
 disposiciones <- titulo_F[[1]][2:length(titulo_F[[1]])]
 rm(titulo_F)
-}
-{
+
+
 # Inicializamos tablon: data frame para guardar frases resumen y otros datos relativos al texto
 tablon <- tibble(bloque = character(), 
                  sub_bloque = character(), 
@@ -141,12 +142,11 @@ tablon <- tibble(bloque = "Cabecera",
                  n_text_rank = NA, 
                  frase = frases_cabecera$sentence)
 linea_indice <- 1
-}
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Preámbulo: procesado ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-{
+```
+
+# Preámbulo: procesado
+```{r}
 # Tomamos el preámbulo completo
 preambulo <- titulos[[1]][1]
 # Eliminamos espacio inicial
@@ -155,11 +155,11 @@ preambulo <- str_replace_all(preambulo, regex("^\\s+\\d"), "")
 bloques_preambulo <- length(str_extract_all(preambulo, regex("(?<=\\s)\\d(?=\\s[[:upper:]])"))[[1]])+1
 # Lista de bloques del preámbulo
 preambulo_bloques <- str_split(preambulo, regex("(?<=\\s)\\d(?=\\s[[:upper:]])"), n=bloques_preambulo)
-}
 
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Preámbulo: extracción de frases con TextRank, por sub-bloques ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+```
+
+# Preámbulo: extracción de frases con TextRank, por sub-bloques
+```{r}
 # Cálculo de n (nº de frases del resumen) para TextRank
 # Tasa de compresión tau=20% (se considera óptimo 15-30%)
 # Contador de frases de cada bloque del preámbulo
@@ -206,11 +206,10 @@ for (i in 1:bloques_preambulo) {
     
   }
 }
+```
 
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Títulos-Capítulos-Artículos: procesado ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-{
+# Títulos-Capítulos-Artículos: procesado
+```{r}
 # Almacenamos los artículos por títulos: cada elemento de la lista se corresponde con un Título
 articulos_por_titulo <- list(NULL)
 # Lista intermedia para guardar los títulos que se dividen en capítulos (no todos los títulos)
@@ -231,15 +230,12 @@ for (i in 1:length(articulos_por_titulo)) {
     articulos_por_titulo[[i]][1:numero_capitulos] <- capitulo_bloques
   }
 }
-}
+```
 
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Títulos-Capítulos-Artículos: extracción de frases con TextRank del bloque  ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
+# Títulos-Capítulos-Artículos: extracción de frases con TextRank del bloque
+```{r}
 # Tenemos 3 bucles for para recorrer Títulos (i), Capítulos (j) y Artículos (k), la unidad
 # de texto para TextRank
-{
 numero_articulo <- 0
 for (i in 1:length(articulos_por_titulo)) {
   linea_indice <- linea_indice + 1
@@ -344,11 +340,10 @@ for (i in 1:length(articulos_por_titulo)) {
   }
 }
 
-}
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Disposiciones: procesado ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-{
+```
+
+# Disposiciones: procesado
+```{r}
 # Eliminamos firma final
 disposiciones[length(disposiciones)] <- str_split(disposiciones[length(disposiciones)], 
                                                   regex("Por tanto, Mando"), n=2)[[1]][1]
@@ -363,14 +358,14 @@ disposiciones_sin_titulo[i] <- str_split(disposiciones[i],
 bloques_disposiciones <- length(disposiciones_sin_titulo)
 # Disposiciones en lista
 disposiciones_bloques <- list(disposiciones_sin_titulo)  
-}
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Disposiciones: extracción de frases con TextRank, por sub-bloques ####
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+```
+
+# Disposiciones: extracción de frases con TextRank, por sub-bloques
+```{r}
 # Cálculo de n (nº de frases del resumen) para TextRank
 # Tasa de compresión tau=20% (se considera óptimo 15-30%)
 # Contador de frases de cada bloque de las disposiciones
-{
 for (i in 1:bloques_disposiciones) {
   linea_indice <- linea_indice + 1
   # Cabeceras de los tres tipos de Disposiciones
@@ -452,4 +447,5 @@ for (i in 1:bloques_disposiciones) {
   }
 }
 
-}
+```
+
