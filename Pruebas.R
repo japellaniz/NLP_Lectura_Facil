@@ -70,8 +70,16 @@ preambulo_summary <- TextRank(preambulo_sentences, preambulo_bigrams_sin_stopwor
 ##################################################################################
 ##################################################################################
 
+###################################################################################
+# Trabajo con sparklyr
+##################################################################################
 
-
+texto <- textdata_tbl %>% spark_apply(function(data) {
+  str_split(data,pattern=".+TEXTO CONSOLIDADO", n=2)[[1]][2]})
+textdata_tbl %>% spark_apply(function(data) {
+  data +
+  str_detect(pattern=".+TEXTO CONSOLIDADO")})
+spark_log(sc)
 
 #######################################################################
 # Número de bloques del preámbulo

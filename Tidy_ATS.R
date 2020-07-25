@@ -6,6 +6,12 @@
 # Proyecto: Resumen Automático de Textos legales
 # 
 
+rm(list = ls());cat("\014")
+
+#library(sparklyr)
+#library(sparklyr.nested)
+#library(dplyr)
+#sc <- spark_connect(master = "local")
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Inicializaciones y carga de librerías ####
@@ -18,9 +24,9 @@ library(tm)
 library(fulltext)
 library(flextable)
 }
-rm(list = ls());cat("\014")
 
 # Carga de stopwords del paquete tm.
+# stop_words_sp = copy_to(sc,tibble(word = tm::stopwords("spanish")))
 stop_words_sp = tibble(word = tm::stopwords("spanish"))
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -62,6 +68,8 @@ Terminology <- function(sub_bloque) {
 # Extracción del texto con paquete fulltext (obtenemos texto en páginas y metadatos)
 {
 path <- "data/BOE-A-1994-26003-consolidado_LAU.pdf"
+#path <- "data/BOE-A-2019-3814-consolidado.pdf"
+
 pdf_text <- ft_extract(path)
 tmp <- c()
 for (i in 1:length(pdf_text$data)){
@@ -69,14 +77,15 @@ for (i in 1:length(pdf_text$data)){
 }
 # Data frame 1x1 con todo el texto crudo
 textdata <- tibble(text = tmp)
+# textdata_tbl <- copy_to(sc, textdata, overwrite = TRUE)
 }
-
+# src_tbls(sc)
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Preprocesado general del texto ####
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 {
 # Separamos el índice de la ley, quitamos la cabecera y textos repetitivos. 
-texto <- str_split(textdata$text,".+TEXTO CONSOLIDADO", n=2)[[1]][2]
+texto <- str_split(textdata$text, ".+TEXTO CONSOLIDADO", n=2)[[1]][2]
 # Eliminamos la cabecera del preámbulo:
 texto <- str_split(texto, "PREAMBULO", n=2)[[1]][2]
 # Eliminamos cabeceras y pies de página:

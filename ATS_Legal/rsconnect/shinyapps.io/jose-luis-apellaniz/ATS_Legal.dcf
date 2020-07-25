@@ -1,0 +1,12 @@
+name: ATS_Legal
+title: ATS_Legal
+username:
+account: jose-luis-apellaniz
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2583578
+bundleId: 3404510
+url: https://jose-luis-apellaniz.shinyapps.io/ATS_Legal/
+when: 1595004405.23231
+asMultiple: FALSE
+asStatic: FALSE
