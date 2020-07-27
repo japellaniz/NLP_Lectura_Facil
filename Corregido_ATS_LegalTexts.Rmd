@@ -1,0 +1,539 @@
+---
+title: "Resumen Automático de Textos legales"
+output: html_notebook
+
+---
+
+
+ Programa Big Data y Business Intelligence 2019/2020
+ Universidad de Deusto
+ Modulo 2.2. Tecnología y Desarrollo en Big Data
+ Proyecto: Resumen Automático de Textos legales
+ (Versión con correcciones usando funciones *apply)
+
+
+
+# Inicializaciones y carga de librerías 
+```{r, warning=FALSE}
+rm(list = ls());cat("\014")
+
+library(tidyverse)
+library(tidytext)
+library(textrank)
+library(tm)
+library(fulltext)
+library(flextable)
+# Carga de stopwords del paquete tm.
+stop_words_sp = tibble(word = tm::stopwords("spanish"))
+
+```
+
+# Funciones
+```{r}
+# Función TextRank. Algoritmo de resumen extractivo de textos, basado en PageRank de Google.
+TextRank <- function(data, terminology) {
+  preambulo_summary <- textrank_sentences(data = data, 
+                                          terminology = terminology)
+}
+
+# Función DataSentences. Devuelve un df con frases a las que se va a aplicar el algoritmo.
+DataSentences <- function(sub_bloque){
+  sentences <- sub_bloque %>%
+    mutate(sentence_id = row_number()) %>%
+    select(sentence_id, sentence)
+  return(sentences)
+}
+
+# Función Terminology (words sin stopwords y sin números). Devuelve un df con tokens(palabras
+# que forman las frases) que van a ser usados por el algoritmo como conectores entre frases. 
+Terminology <- function(sub_bloque) {
+  # Lista de palabras con stopwords
+  sub_bloque_words <- sub_bloque %>%
+    unnest_tokens(word, sentence)
+  # Lista de palabras sin stopwords y sin números
+  sub_bloque_words <- sub_bloque_words %>%
+    anti_join(stop_words_sp, by = "word") %>% 
+    filter(!str_detect(word,"[[:digit:]]"))
+  return(sub_bloque_words)
+}
+
+```
+
+# Carga de datos
+```{r}
+# Extracción del texto con paquete fulltext (obtenemos texto en páginas y metadatos)
+#path <- "data/BOE-A-1994-26003-consolidado_LAU.pdf"
+#pdf_text <- ft_extract(path)
+pdf_text <- readRDS("pdf_text.rds")
+tmp <- paste(pdf_text$data, collapse = "")
+# tmp <- c()
+# for (i in 1:length(pdf_text$data)){
+#   tmp <- str_c(tmp,pdf_text$data[i])
+# }
+# Data frame 1x1 con todo el texto crudo
+#textdata <- tibble(text = tmp) <-- Para qué lo necesitas?
+```
+
+# Preprocesado general del texto
+```{r}
+# Separamos el índice de la ley, quitamos la cabecera y textos repetitivos. 
+texto <- str_split(tmp,".+TEXTO CONSOLIDADO", n=2)[[1]][2]
+# Eliminamos la cabecera del preámbulo:
+texto <- str_split(texto, "PREAMBULO", n=2)[[1]][2]
+# Eliminamos cabeceras y pies de página:
+texto <- str_replace_all(texto, regex("(BOLETÍN OFICIAL DEL ESTADO|LEGISLACIÓN CONSOLIDADA|Página\\s[[:digit:]]+)"), "")
+# Eliminamos indicadores alfabéticos de párrafo o línea tipo a), b),...
+texto <- str_replace_all(texto, regex("\\s+[[:alpha:]]{1}\\)"), "")
+# Eliminamos enumeraciones tipo 1.ª, 2.ª,...
+texto <- str_replace_all(texto, regex("\\d+\\.ª(?=\\s[[:upper:]])"), "")
+# Eliminamos enumeraciones tipo 10.1, 2.3,...
+texto <- str_replace_all(texto, regex("\\d+\\.\\d+(?=\\s[[:upper:]])"), "")
+# Eliminamos anomalía del texto tipo "...cuarta. 3.ª del..." que hace división de frase artificial.
+texto <- str_replace_all(texto, regex("\\.(?=\\s\\d+\\.ª\\s[[:lower:]])"), "")
+
+
+# Trabajo con el índice
+indice <- str_split(tmp,".+TEXTO CONSOLIDADO", n=2)[[1]][1]
+indice <- stripWhitespace(indice)
+indice_cabecera <- str_split(indice, regex("ÍNDICE"), n=2)[[1]][1]
+indice <- str_split(indice, regex("ÍNDICE"), n=2)[[1]][2]
+indice <- str_replace_all(indice, regex("(BOLETÍN OFICIAL DEL ESTADO|LEGISLACIÓN CONSOLIDADA|Página\\s[[:digit:]]+)"), "")
+indice <- str_replace_all(indice, regex("\\.\\s\\d+"), "")
+indice <- str_replace_all(indice, regex("(?<=\\.)\\s\\."), "")
+indice <- stripWhitespace(indice)
+indice <- str_replace_all(indice, regex("(?<=[IVXLCM])\\."), ":")
+indice <- str_replace_all(indice, regex("(?<=Artículo\\s\\d{1,3})\\."), ":")
+indice <- str_replace_all(indice, regex("\\s\\."), "\\.")
+
+# Tabla de líneas de Índice
+indice_lineas <- tibble(text = indice) %>% 
+  unnest_tokens(linea, text, token = "sentences", to_lower = FALSE)
+
+# Limpieza de entorno de trabajo.
+rm(list = c("i","path","tmp"));cat("\014")
+
+
+# Generamos la lista titulos que contiene Preámbulo, Títulos y Disposiciones.
+titulos <- str_split(texto, "TÍTULO")
+# Eliminamos espacios en blanco que pueda haber en exceso.
+titulos[[1]] <- stripWhitespace(titulos[[1]])
+# Obtenemos nº de documentos en que queda dividido en texto
+tit_fin <- length(titulos[[1]])
+# Separamos el último título de las disposiciones
+titulo_F <- str_split(titulos[[1]][tit_fin],"Disposición")
+titulos[[1]][tit_fin]<- titulo_F[[1]][1]
+# Obtenemos bloque de Disposiciones para uso posterior
+disposiciones <- titulo_F[[1]][2:length(titulo_F[[1]])]
+rm(titulo_F)
+
+
+# Inicializamos tablon: data frame para guardar frases resumen y otros datos relativos al texto
+tablon <- tibble(bloque = character(), 
+                 sub_bloque = character(), 
+                 n_text_rank = integer(), 
+                 frase = character())
+
+frases_cabecera <- tibble(text = indice_cabecera) %>%
+  unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%  
+  mutate(sentence_id = row_number()) %>%
+  select(sentence_id, sentence)
+
+tablon <- tibble(bloque = "Cabecera", 
+                 sub_bloque = NA, 
+                 n_text_rank = NA, 
+                 frase = frases_cabecera$sentence)
+linea_indice <- 1
+
+```
+
+# Preámbulo: procesado
+```{r}
+# Tomamos el preámbulo completo
+preambulo <- titulos[[1]][1]
+# Eliminamos espacio inicial
+preambulo <- str_replace_all(preambulo, regex("^\\s+\\d"), "")
+# Número de bloques del preámbulo
+bloques_preambulo <- length(str_extract_all(preambulo, regex("(?<=\\s)\\d(?=\\s[[:upper:]])"))[[1]])+1
+# Lista de bloques del preámbulo
+preambulo_bloques <- str_split(preambulo, regex("(?<=\\s)\\d(?=\\s[[:upper:]])"), n=bloques_preambulo)
+
+```
+
+# Preámbulo: extracción de frases con TextRank, por sub-bloques
+```{r}
+# Cálculo de n (nº de frases del resumen) para TextRank
+# Tasa de compresión tau=20% (se considera óptimo 15-30%)
+# Contador de frases de cada bloque del preámbulo
+
+calcular_frases_token <- function(bloque) {
+    tibble(text = bloque) %>%
+    unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%  
+    mutate(sentence_id = row_number()) %>%
+    select(sentence_id, sentence) 
+}
+
+calcular_numero_frases <- function(frases_token) {
+  frases_token %>%
+    mutate(sentence_id = row_number()) %>%
+    summarise(n = n())
+}
+
+calcular_frases_seleccionadas <- function(frases_token) {
+  numero_frases <- calcular_numero_frases(frases_token)
+  if (numero_frases > 1) {
+    n <- as.integer(ceiling(0.2*numero_frases))
+    sentences <- DataSentences(frases_token)
+    words <- Terminology(frases_token)
+    textRank_summary <- TextRank(sentences, words)
+    summary(textRank_summary, n = n, keep.sentence.order = TRUE)
+  } else {
+    frases_token$sentence
+  }
+}
+
+calcular_tablon <- function(frases_seleccionadas, sub_bloque) {
+  # Almacenamiento en el tablón
+  tablon <- tibble(bloque = "Preámbulo", 
+                   sub_bloque = sub_bloque, 
+                   n_text_rank = length(frases_seleccionadas), 
+                   frase = str_c(indice_lineas$linea[linea_indice]," ",sub_bloque))
+  tabla_parcial <- tibble(bloque ="Preámbulo", 
+                          sub_bloque = sub_bloque, 
+                          n_text_rank = length(frases_seleccionadas), 
+                          frase = frases_seleccionadas )
+  rbind(tablon,tabla_parcial)
+}
+
+calcular_tablon_preambulo <- function(sub_bloque, preambulo_bloques) {
+  frases_token <- calcular_frases_token(preambulo_bloques[sub_bloque])
+  frases_seleccionadas <- calcular_frases_seleccionadas(frases_token)
+  calcular_tablon(frases_seleccionadas, sub_bloque)
+}
+
+# OPCIÓN INEFICIENTE (LOOP)
+# for (i in 1:bloques_preambulo) {
+#   tablon_preambulo <- calcular_tablon_preambulo(i, preambulo_bloques[[1]])
+#   tablon <- rbind(tablon, tablon_preambulo)
+# }
+
+# OPCIÓN EFICIENTE
+tablon <- rbind(tablon,
+                lapply(1:bloques_preambulo, calcular_tablon_preambulo,
+                             preambulo_bloques = preambulo_bloques[[1]]) %>%
+                  bind_rows())
+
+
+```
+
+# Títulos-Capítulos-Artículos: procesado
+```{r}
+# Almacenamos los artículos por títulos: cada elemento de la lista se corresponde con un Título
+articulos_por_titulo <- list(NULL)
+# Lista intermedia para guardar los títulos que se dividen en capítulos (no todos los títulos)
+capitulo_bloques <- list(NULL)
+# Almacena los bloques de Títulos quitando espacio inicial
+quita_espacio_titulos <- function(i) {
+   str_replace_all(titulos[[1]][i], regex("^\\s+[IVXLCM]+"), "")
+}
+articulos_por_titulo <- lapply(X = 2:length(titulos[[1]]),
+                              FUN = quita_espacio_titulos)
+
+# Función: para los Títulos divididos en Capítulos, separamos los capítulos, y los volvemos a guardar 
+# en articulos_por_titulo.
+separa_capitulos <- function(i) {
+  if (str_detect(articulos_por_titulo[[i]], regex("CAPÍTULO"))) {
+    numero_capitulos <- str_count(articulos_por_titulo[[i]], regex("CAPÍTULO"))
+    # Separación en bloques de capítulos, eliminando el comienzo
+    capitulo_bloques <- str_split(articulos_por_titulo[[i]], 
+                                  regex("(?<=\\s)CAPÍTULO(?=\\s+[IVXLCM]+)"), 
+                                  n=numero_capitulos+1)[[1]][1:numero_capitulos+1]
+    articulos_por_titulo[[i]][1:numero_capitulos] <- capitulo_bloques
+  } else {
+    articulos_por_titulo[[i]]
+  }
+}
+
+articulos_por_titulo <- lapply(1:length(articulos_por_titulo),
+       separa_capitulos)
+
+```
+
+# Títulos-Capítulos-Artículos: extracción de frases con TextRank del bloque
+```{r}
+# Funciones para lapply
+calcular_frases_token_2 <- function(sub_bloque,bloque) { # bloque = titulo_bloques[[1]][k]
+          if (sub_bloque >=1) {
+            # "Tokenizamos" el artículo
+            tibble(text = bloque) %>%
+              unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%
+              mutate(sentence_id = row_number()) %>%
+              select(sentence_id, sentence) %>%
+              filter(sentence_id != 1)
+          }
+}
+
+calcular_tablon <- function(frases_seleccionadas, sub_bloque) {
+          # Almacenamiento en el tablón
+          linea_indice <- linea_indice + sub_bloque
+          numero_articulo <- numero_articulo + sub_bloque
+          # Si hay o no hay Capítulos
+          if (length(articulos_por_titulo[[i]]) > 1) {
+            tablon <- tibble(bloque = str_c("Título ", i, 
+                                            " Capítulo ", j, 
+                                            " Artículo ", numero_articulo),
+                              sub_bloque = sub_bloque,
+                              n_text_rank = length(frases_seleccionadas),
+                              frase = str_c(indice_lineas$linea[linea_indice]))
+            tabla_parcial <- tibble(bloque =str_c("Título ", i, 
+                                                  " Capítulo ", j, 
+                                                  " Artículo ", numero_articulo),
+                              sub_bloque = sub_bloque,
+                              n_text_rank = length(frases_seleccionadas),
+                              frase = frases_seleccionadas )
+            tablon <- rbind(tablon,tabla_parcial)
+          } else {
+            tablon <- tibble(bloque = str_c("Título ", i, " Artículo ", numero_articulo),
+                                          sub_bloque =  sub_bloque,
+                                          n_text_rank = length(frases_seleccionadas),
+                                          frase = str_c(indice_lineas$linea[linea_indice]))
+            tabla_parcial <- tibble(bloque =str_c("Título ", i, " Artículo ", numero_articulo),
+                                    sub_bloque = sub_bloque,
+                                    n_text_rank = length(frases_seleccionadas),
+                                    frase = frases_seleccionadas )
+            tablon <- rbind(tablon,tabla_parcial)
+          }
+}
+
+calcular_tablon_articulos <- function(sub_bloque, titulo_bloques) {
+  frases_token <- calcular_frases_token_2(sub_bloque,titulo_bloques[sub_bloque])
+  frases_seleccionadas <- calcular_frases_seleccionadas(frases_token)
+  calcular_tablon(frases_seleccionadas, sub_bloque)
+}
+
+
+# Tenemos 2 bucles for para recorrer Títulos (i) y Capítulos (j).Los Artículos, la unidad
+# de texto para TextRank, lo hacemos con lapply
+numero_articulo <- 0
+for (i in 1:length(articulos_por_titulo)) {
+  linea_indice <<- linea_indice + 1
+  tablon <- rbind(tablon, tibble(bloque = str_c("Título ", i),
+                                 sub_bloque = NA,
+                                 n_text_rank = NA,
+                                 frase = indice_lineas$linea[linea_indice]))
+  
+  
+  for (j in 1:length(articulos_por_titulo[[i]])) {
+    # Si hay Capítulos en el Título
+    if (length(articulos_por_titulo[[i]]) > 1) {
+      #numero_capitulo <<- numero_capitulo + 1
+      linea_indice <- linea_indice + 1
+      tablon <- rbind(tablon,tibble(bloque = str_c("Título ", i,
+                                                   " Capítulo ", j),
+                                    sub_bloque = i,
+                                    n_text_rank = NA,
+                                    frase = indice_lineas$linea[linea_indice]))
+    }
+ 
+    # Número de bloques de cada título (para titulos con y sin capítulos)
+    bloques_titulo <<- length(str_extract_all(articulos_por_titulo[[i]][j],
+                                             regex("(?<=.)Artículo(?=\\s+[[:digit:]]+\\.)"))[[1]])+1 
+    # Lista de bloques
+    titulo_bloques <- str_split(articulos_por_titulo[[i]][j],
+                                regex("(?<=.)Artículo(?=\\s+[[:digit:]]+\\.)"),
+                                n=bloques_titulo)[[1]][2:bloques_titulo]
+    # En el caso de que bloques_titulos = 1, aparecen NAs
+    titulo_bloques <- titulo_bloques[!is.na(titulo_bloques)]
+    titulo_bloques <- list(str_replace_all(titulo_bloques, regex("\\s\\d+\\.(?=\\s[[:upper:]])"), ""))
+
+    if (bloques_titulo == 1) {bloques_titulo <- 2}
+    
+    tablones_titulos <- lapply(X = 1:(bloques_titulo-1), 
+                                FUN = calcular_tablon_articulos,
+                                titulo_bloques = titulo_bloques[[1]]) %>%
+                          bind_rows()
+    tablon <- rbind(tablon, tablones_titulos)
+    linea_indice <<- linea_indice + bloques_titulo - 1
+    numero_articulo <<- numero_articulo + bloques_titulo - 1
+   
+  }
+}
+
+```
+
+# Disposiciones: procesado
+```{r}
+# Eliminamos firma final
+disposiciones[length(disposiciones)] <- str_split(disposiciones[length(disposiciones)], 
+                                                  regex("Por tanto, Mando"), n=2)[[1]][1]
+# Extraemos el texto de las disposiciones sin los títulos
+disposiciones_sin_titulo <- disposiciones
+
+# Función para sapply
+quita_titulo_disposiciones <- function(i) {
+ str_split(disposiciones[i],regex("\\.\\s(?=[[:upper:]])"), n=3)[[1]][3] 
+}
+disposiciones_sin_titulo <- sapply(1:length(disposiciones),quita_titulo_disposiciones)
+
+# Número de diposiciones en el texto
+bloques_disposiciones <- length(disposiciones_sin_titulo)
+# Disposiciones en lista
+disposiciones_bloques <- list(disposiciones_sin_titulo)  
+
+```
+
+# Disposiciones: extracción de frases con TextRank, por sub-bloques
+```{r}
+# Cálculo de n (nº de frases del resumen) para TextRank
+# Tasa de compresión tau=20% (se considera óptimo 15-30%)
+# Contador de frases de cada bloque de las disposiciones
+posicion_disposicion <- tibble(linea = integer(),
+                               tipo = character())
+posicion_disposicion_tipo <- function(linea_i,indice_lineas) {
+  
+  if (str_detect(indice_lineas$linea[linea_i], "Disposiciones adicionales")) {
+    posicion <- tibble(linea = linea_i,
+                        tipo = "Disposiciones adicionales")
+    posicion_disposicion <- rbind(posicion_disposicion, posicion)
+  }
+  if (str_detect(indice_lineas$linea[linea_i], "Disposiciones transitorias")) {
+    posicion <- tibble(linea = linea_i,
+                       tipo = "Disposiciones transitorias")
+    posicion_disposicion <- rbind(posicion_disposicion, posicion)
+  }
+  if (str_detect(indice_lineas$linea[linea_i], "Disposiciones derogatorias")) {
+    posicion <- tibble(linea = linea_i,
+                       tipo = "Disposiciones derogatorias")
+    posicion_disposicion <- rbind(posicion_disposicion, posicion)
+  }
+  if (str_detect(indice_lineas$linea[linea_i], "Disposiciones finales")) {
+    posicion <- tibble(linea = linea_i,
+                       tipo = "Disposiciones finales")
+    posicion_disposicion <- rbind(posicion_disposicion, posicion)
+  } else {
+    posicion <- tibble(linea = linea_i,
+                       tipo = NA)
+    posicion_disposicion <- rbind(posicion_disposicion, posicion)
+  }
+}
+
+posicion_disposicion <- rbind(posicion_disposicion, lapply(linea_indice:nrow(indice_lineas), 
+                              posicion_disposicion_tipo, 
+                              indice_lineas) %>% bind_rows()) %>% 
+                              filter(!is.na(tipo)) 
+numero_bloques_disposiciones <- nrow(posicion_disposicion)
+pd_fin <- posicion_disposicion$linea[numero_bloques_disposiciones]
+
+lista_bloques_disposiciones <- function(numero_bloques_disposiciones){
+  posicion_disposicion$linea[numero_bloques_disposiciones]
+}
+pd <- sapply(1:numero_bloques_disposiciones, lista_bloques_disposiciones)
+                                
+
+escribe_tablon <- function(frases_seleccionadas, sub_bloque) {
+  
+  linea_indice <- linea_indice + (sub_bloque*2) - 1
+  tramo <- numero_bloques_disposiciones
+  
+  linea_indice <- linea_indice + 4
+  while (linea_indice <=  pd[tramo]) {
+    linea_indice <- linea_indice - 1
+    tramo <- tramo - 1
+  }
+# tramo 1: 1-11, tramo 2: 12-17, tramo 3: 18, tramo 4: 19-21  
+  linea_indice_titulo <- linea_indice - 1
+  
+  tabla_parcial <- tibble()
+  
+  if (linea_indice_titulo %in% posicion_disposicion$linea) {
+    # Cabeceras de los cuatro tipos de Disposiciones
+    if (str_detect(indice_lineas$linea[linea_indice_titulo], "Disposiciones adicionales")) {
+      tabla_parcial <- tibble(bloque = "Disposiciones adicionales",
+                       sub_bloque = NA,
+                       n_text_rank = NA,
+                       frase = str_c(indice_lineas$linea[linea_indice_titulo]))
+      tipo_disposicion <- "Disposiciones adicionales"
+      
+    }
+    if (str_detect(indice_lineas$linea[linea_indice_titulo], "Disposiciones transitorias")) {
+      tabla_parcial <- tibble(bloque = "Disposiciones transitorias",
+                       sub_bloque = NA,
+                       n_text_rank = NA,
+                       frase = str_c(indice_lineas$linea[linea_indice_titulo]))
+      tipo_disposicion <- "Disposiciones transitorias"
+      
+    }
+    if (str_detect(indice_lineas$linea[linea_indice_titulo], "Disposiciones derogatorias")) {
+      tabla_parcial <- tibble(bloque = "Disposiciones derogatorias",
+                       sub_bloque = NA,
+                       n_text_rank = NA,
+                       frase = str_c(indice_lineas$linea[linea_indice_titulo]))
+      tipo_disposicion <- "Disposiciones derogatorias"
+      
+    }
+    if (str_detect(indice_lineas$linea[linea_indice_titulo], "Disposiciones finales")) {
+      tabla_parcial <- tibble(bloque = "Disposiciones finales",
+                       sub_bloque = NA,
+                       n_text_rank = NA,
+                       frase = str_c(indice_lineas$linea[linea_indice_titulo]))
+      tipo_disposicion <- "Disposiciones finales"
+      
+    }
+  }
+  tipo_disposicion <- posicion_disposicion$tipo[tramo]
+   
+    # Almacenamiento en el tablón
+    tabla_parcial_1 <- tibble(bloque = tipo_disposicion,
+                                  sub_bloque = sub_bloque, 
+                                  n_text_rank = length(frases_seleccionadas), 
+                                  frase = str_c(indice_lineas$linea[linea_indice]," ", indice_lineas$linea[linea_indice + 1]))
+    linea_indice <- linea_indice + 1
+    tabla_parcial_2 <- tibble(bloque = tipo_disposicion, 
+                            sub_bloque = sub_bloque,
+                            n_text_rank = length(frases_seleccionadas), 
+                            frase = frases_seleccionadas )
+    tabla_parcial <- rbind(tabla_parcial, tabla_parcial_1, tabla_parcial_2)
+   
+}
+ 
+
+calcular_tablon_disposiciones <- function(sub_bloque, disposiciones_bloque) {
+  frases_token <- calcular_frases_token(disposiciones_bloque[sub_bloque])
+  frases_seleccionadas <- calcular_frases_seleccionadas(frases_token)
+  escribe_tablon(frases_seleccionadas, sub_bloque)
+} 
+
+
+#OPCIÓN EFICIENTE
+tablones_disposiciones <- lapply(1:bloques_disposiciones, calcular_tablon_disposiciones,
+                                 disposiciones_bloque = disposiciones_bloques[[1]]) %>%
+                          bind_rows() 
+tablon <- rbind(tablon, tablones_disposiciones)
+
+```
+
+# Presentación del resumen de la ley
+```{r}
+# Usamos paquete flextable
+t <- tibble(LAU = tablon$frase)
+ft <- flextable(t) 
+ft <- ft %>% 
+  theme_alafoli() %>% 
+  set_header_labels(LAU = "Resumen de la Ley de Arrendamientos Urbanos") %>% 
+  fontsize(part = "body", size = 16) %>% 
+  fontsize(part = "header", size = 20) %>% 
+  align(align = "center", part = "all") %>% 
+  autofit() %>% 
+  font(fontname = "Arial") %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^Preámbulo"))) %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^TÍTULO"))) %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^CAPÍTULO"))) %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^Artículo"))) %>% 
+  bold(i = ~ str_detect(ft$body$dataset$LAU,regex("^Disposici")))
+ft
+# Guardamos el resumen en un .docx reformateando los tamaños de las fuentes
+ft <- fontsize(ft, part = "body", size = 12)
+ft <- fontsize(ft, part = "header", size = 14)
+save_as_docx(ft, path = "data/resumen_output.docx")
+
+```
+
